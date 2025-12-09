@@ -1,1 +1,1 @@
-# clique-finder
+# Quick Hull Parallel implementation in C
