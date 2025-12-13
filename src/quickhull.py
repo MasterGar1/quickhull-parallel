@@ -18,7 +18,7 @@ def quickhull_step(points: list[Point], p1: Point, p2: Point, side: int) -> list
         return [p1, p2]
 
     p_max: Point = max(cand, key=lambda p: get_distance(p1, p2, p))
-    # Target sides
+
     ts1: int = -find_side(p_max, p1, p2)
     ts2: int = -find_side(p_max, p2, p1)
 
