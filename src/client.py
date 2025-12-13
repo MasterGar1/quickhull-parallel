@@ -1,60 +1,74 @@
-import json
-from socket import socket, SOCK_STREAM, AF_INET
-from time import time
-from utility import *
+"""
+Implements a client that generates random points, sends them to
+the server for processing, and displays the benchmark results.
+"""
+from socket  import socket, SOCK_STREAM, AF_INET
+from pickle  import dumps, loads
+from struct  import pack, unpack
+from zlib    import compress, decompress
+from time    import time
+from typing  import Any
 
-HOST = '127.0.0.1'
-PORT = 65432
+from utility import generate_points, Point, HOST, PORT, CHUNK_SIZE, DEFAULT_POINTS, DEFAULT_THREADS, DEFAULT_DIMS
 
 def run_client() -> None:
+    """Connects to the server, sends input data, and displays the results."""
     try:
         with socket(AF_INET, SOCK_STREAM) as sock:
             print(f"[Client] Connecting to server at {HOST}:{PORT}...")
             sock.connect((HOST, PORT))
-            num_points_str: str = input("[Input] Enter number of points (default 100000): ")
-            num_points = int(num_points_str) if num_points_str else 100000
             
-            num_threads_str: str = input("[Input] Enter processes for server (default 4): ")
-            num_threads = int(num_threads_str) if num_threads_str else 4
+            inpt: str = input(f"[Input] Enter number of points (default {DEFAULT_POINTS}): ")
+            pts: int = int(inpt) if inpt else DEFAULT_POINTS
             
-            num_dims_str: str = input("[Input] Enter dimensions (default 2): ")
-            num_dims = int(num_dims_str) if num_dims_str else 2
+            inpt = input(f"[Input] Enter number of threads (default {DEFAULT_THREADS}): ")
+            thr: int = int(inpt) if inpt else DEFAULT_THREADS
+            
+            inpt = input(f"[Input] Enter dimensions (default {DEFAULT_DIMS}): ")
+            dims: int = int(inpt) if inpt else DEFAULT_DIMS
 
-            points: list[Point] = generate_points(num_points, num_dims)
+            points: list[Point] = generate_points(pts, dims)
             
-            payload: dict[str, any] = {"points": points, "threads": num_threads}
-            print("[Client] Sending data.")
-            start_time: float = time()
-            sock.sendall(json.dumps(payload, cls=JsonEncodePoint).encode('utf-8'))
+            payload: dict[str, Any]= {"points": points, "threads": thr}
+            print("[Client] Compressing and sending data...")
+            st: float = time()
+            
+            data: bytes = compress(dumps(payload))
+            sock.sendall(pack('>I', len(data)) + data)
+            
+            data_len: bytes = sock.recv(4)
+            if not data_len:
+                print("[Error] No response length received.")
+                return
+            resp_len: int = unpack('>I', data_len)[0]
+            
             fragments: list[bytes] = []
-            while True:
-                chunk: bytes = sock.recv(1024 * 128)
+            rec_bytes: int = 0
+            while rec_bytes < resp_len:
+                chunk: bytes = sock.recv(min(resp_len - rec_bytes, CHUNK_SIZE))
                 if not chunk: break
                 fragments.append(chunk)
-            response_data: bytes = b''.join(fragments)
-            total_roundtrip: float = time() - start_time
-            print(f"[Done] Data received. Total time: {total_roundtrip:.2f}s")
+                rec_bytes += len(chunk)
+            
+            resp: bytes = b''.join(fragments)
+            
+            tt: float = time() - st
+            print(f"[Done] Data received. Total time: {tt:.2f}s")
         
-        result: dict[str, any] = json.loads(response_data.decode('utf-8'), object_hook=decode_point)
-        hull_raw = result['hull']
+        result: dict[str, Any] = loads(decompress(resp))
+        hull: list[Point] = result['hull']
 
-        print("\n" + "="*35)
-        print("   RESULTS   ")
-        print("="*35)
-        print(f"Input Size: {num_points} points")
-        print(f"Hull Points Found (Raw): {len(hull_raw)}")
-        print("-" * 35)
-        print(f"Server Serial Time:   {result['serial_time']:.4f} s")
-        print(f"Server Parallel Time: {result['parallel_time']:.4f} s ({num_threads} threads)")
-        print(f"Speedup:              {result['speedup']:.2f}x")
-        print("="*35)
-
+        print("\n[RESULTS]")
+        print(f"Input Size:             {pts} points")
+        print(f"Server Serial Time:     {result['serial_time']:.4f} s")
+        print(f"Server Parallel Time:   {result['parallel_time']:.4f} s ({thr} threads)")
+        print(f"Speedup:                {result['speedup']:.2f}x")
+        print(f"Hull Points Amount:     {len(hull)}")
+        print(f"Hull Points:{"   ".join([ f"{"\n" if i % 4 == 0 else ""}{p}" for i, p in enumerate(hull) ])}")
     except ConnectionRefusedError:
-        print(f"\n[ERROR] Could not connect to {HOST}:{PORT}. Is the server running?")
-    except json.JSONDecodeError:
-        print("\n[ERROR] Failed to decode JSON response. Response might be incomplete.")
+        print(f"\n[Error] Could not connect to {HOST}:{PORT}. Is the server running?")
     except Exception as e:
-        print(f"\n[ERROR] An unexpected error occurred: {e}")
+        print(f"\n[Error] An unexpected error occurred: {e}")
 
 if __name__ == '__main__':
     run_client()

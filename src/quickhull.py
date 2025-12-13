@@ -1,183 +1,116 @@
-from time import time
-from processpool import ProcessPool
-from utility import Point
-import sys
-import math
+"""
+QuickHull algorithm implementation for Convex Hull construction.
+"""
+from time       import time
+from typing     import Any
 
-sys.setrecursionlimit(20000)
+from threadpool import ThreadPool, Future
+from utility    import Point, find_side, get_distance
 
-def get_distance(p1: Point, p2: Point, p3: Point) -> float:
-    return abs((p3[1] - p1[1]) * (p2[0] - p1[0]) - (p2[1] - p1[1]) * (p3[0] - p1[0]))
-
-def find_side(p1: Point, p2: Point, p3: Point) -> int:
-    val: float = (p3[1] - p1[1]) * (p2[0] - p1[0]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
-    return int(val > 0) - int(val < 0)
-
-def worker_find_max(points: list[Point], p1: Point, p2: Point, side: int):
-    max_dist = -1.0
-    ind = -1
-    
-    for i, p in enumerate(points):
-        if find_side(p1, p2, p) == side:
-            dist = get_distance(p1, p2, p)
-            if dist > max_dist:
-                max_dist = dist
-                ind = i
-                
-    return (max_dist, points[ind] if ind != -1 else None)
-
-def worker_partition(points: list[Point], p1: Point, p2: Point, p_max: Point, target_side_1: int, target_side_2: int):
-    s1_points = []
-    s2_points = []
-    
-    for p in points:
-        if p == p_max: continue
-        
-        if find_side(p_max, p1, p) == target_side_1:
-            s1_points.append(p)
-        elif find_side(p_max, p2, p) == target_side_2:
-            s2_points.append(p)
-            
-    return (s1_points, s2_points)
-
-def quickhull_serial(points: list[Point], p1: Point, p2: Point, side: int) -> list[Point]:
+def quickhull_step(points: list[Point], p1: Point, p2: Point, side: int) -> list[Point]:
+    """Recursively computes the convex hull for points on one side of the line p1-p2."""
     if not points:
         return []
 
-    ind = -1
-    max_dist = 0
-    
-    for i in range(len(points)):
-        temp = get_distance(p1, p2, points[i])
-        if find_side(p1, p2, points[i]) == side and temp > max_dist:
-            ind = i
-            max_dist = temp
+    cand: list[Point] = [p for p in points if find_side(p1, p2, p) == side]
 
-    if ind == -1:
+    if not cand:
         return [p1, p2]
 
-    p_max = points[ind]
-    
-    s1_points = []
-    s2_points = []
-    
-    target_side_1 = -find_side(p_max, p1, p2)
-    target_side_2 = -find_side(p_max, p2, p1)
+    p_max: Point = max(cand, key=lambda p: get_distance(p1, p2, p))
+    # Target sides
+    ts1: int = -find_side(p_max, p1, p2)
+    ts2: int = -find_side(p_max, p2, p1)
 
-    for p in points:
-        if p == p_max: continue
-        if find_side(p_max, p1, p) == target_side_1:
-            s1_points.append(p)
-        elif find_side(p_max, p2, p) == target_side_2:
-            s2_points.append(p)
+    s1: list[Point] = [p for p in cand if p != p_max and find_side(p_max, p1, p) == ts1]
+    s2: list[Point] = [p for p in cand if p != p_max and find_side(p_max, p2, p) == ts2]
 
-    res1 = quickhull_serial(s1_points, p1, p_max, target_side_1)
-    res2 = quickhull_serial(s2_points, p_max, p2, target_side_2)
+    res1: list[Point] = quickhull_step(s1, p1, p_max, ts1)
+    res2: list[Point] = quickhull_step(s2, p_max, p2, ts2)
     
     return res1 + res2 + [p_max]
 
+def partition(points: list[Point], p1: Point, p2: Point, side: int) -> tuple[Point, tuple[list[Point], Point, Point, int], tuple[list[Point], Point, Point, int]] | None:
+    """Partitions points for a single QuickHull step, returning the max point and sub-tasks."""
+    cand: list[Point] = [p for p in points if find_side(p1, p2, p) == side]
+    if not cand:
+        return None
+    
+    p_max: Point = max(cand, key=lambda p: get_distance(p1, p2, p))
+    
+    ts1: int = -find_side(p_max, p1, p2)
+    ts2: int = -find_side(p_max, p2, p1)
+    
+    s1: list[Point] = [p for p in cand if p != p_max and find_side(p_max, p1, p) == ts1]
+    s2: list[Point] = [p for p in cand if p != p_max and find_side(p_max, p2, p) == ts2]
+    
+    return (p_max, (s1, p1, p_max, ts1), (s2, p_max, p2, ts2))
+
 def run_serial(points: list[Point]) -> list[Point]:
+    """Runs the QuickHull algorithm sequentially."""
     if len(points) < 3: return points
 
-    min_x = min(points, key=lambda p: p[0])
-    max_x = max(points, key=lambda p: p[0])
+    min_x: Point = min(points, key=lambda p: p[0])
+    max_x: Point = max(points, key=lambda p: p[0])
 
     hull: list[Point] = []
-    hull += quickhull_serial(points, min_x, max_x, 1)
-    hull += quickhull_serial(points, min_x, max_x, -1)
+    hull += quickhull_step(points, min_x, max_x, 1)
+    hull += quickhull_step(points, min_x, max_x, -1)
 
     return list(set(hull))
 
 def run_parallel(points: list[Point], num_threads: int) -> list[Point]:
+    """Runs the QuickHull algorithm in parallel using a ThreadPool."""
     if len(points) < 3: return points
-    
-    pool = ProcessPool(num_threads)
-    
-    min_x = min(points, key=lambda p: p[0])
-    max_x = max(points, key=lambda p: p[0])
 
-    hull_points = [min_x, max_x]
+    pool: ThreadPool = ThreadPool(num_threads)
     
-    task_queue = [
+    min_x: Point = min(points, key=lambda p: p[0])
+    max_x: Point = max(points, key=lambda p: p[0])
+
+    hull: list[Point] = [min_x, max_x]
+    
+    cur_tasks: list[tuple[list[Point], Point, Point, int]]= [
         (points, min_x, max_x, 1),
         (points, min_x, max_x, -1)
     ]
     
-    serial_futures = []
-    
-    PARALLEL_THRESHOLD = 20000
+    tar: int = num_threads * 4
 
-    while task_queue:
-        curr_points, p1, p2, side = task_queue.pop(0)
-        
-        if not curr_points:
-            continue
+    while len(cur_tasks) < tar and cur_tasks:
+        futures: list[Future] = [pool.submit(partition, *args) for args in cur_tasks]
+        next_tasks: list[tuple[list[Point], Point, Point, int]] = []
+
+        for f in futures:
+            res: Any = f.get_result()
+            if res:
+                p_max, t1, t2 = res
+                hull.append(p_max)
+                if t1[0]: next_tasks.append(t1)
+                if t2[0]: next_tasks.append(t2)
+        cur_tasks = next_tasks
+
+    futures: list[Future] = [pool.submit(quickhull_step, *args) for args in cur_tasks]
+    
+    for f in futures:
+        hull += f.get_result()
             
-        if len(curr_points) < PARALLEL_THRESHOLD:
-            f = pool.submit(quickhull_serial, curr_points, p1, p2, side)
-            serial_futures.append(f)
-            continue
-            
-        chunk_size = math.ceil(len(curr_points) / num_threads)
-        chunks = [curr_points[i:i + chunk_size] for i in range(0, len(curr_points), chunk_size)]
-        
-        max_futures = []
-        for chunk in chunks:
-            max_futures.append(pool.submit(worker_find_max, chunk, p1, p2, side))
-            
-        global_max_dist = -1.0
-        p_max = None
-        
-        for f in max_futures:
-            dist, pt = f.get_result()
-            if pt is not None and dist > global_max_dist:
-                global_max_dist = dist
-                p_max = pt
-        
-        if p_max is None:
-            continue
-            
-        hull_points.append(p_max)
-        
-        target_side_1 = -find_side(p_max, p1, p2)
-        target_side_2 = -find_side(p_max, p2, p1)
-        
-        part_futures = []
-        for chunk in chunks:
-            part_futures.append(pool.submit(worker_partition, chunk, p1, p2, p_max, target_side_1, target_side_2))
-            
-        s1_total = []
-        s2_total = []
-        
-        for f in part_futures:
-            s1, s2 = f.get_result()
-            s1_total.extend(s1)
-            s2_total.extend(s2)
-            
-        if s1_total:
-            task_queue.append((s1_total, p1, p_max, target_side_1))
-        if s2_total:
-            task_queue.append((s2_total, p_max, p2, target_side_2))
-            
-    for f in serial_futures:
-        hull_points.extend(f.get_result())
-        
     pool.shutdown()
-    
-    return list(set(hull_points))
+    return list(set(hull))
 
-def benchmark(points: list[Point], threads: int) -> dict[str, any]:
-    start: float = time()
-    ser_res: list[Point]= run_serial(points)
-    serial_time: float = time() - start
+def benchmark(points: list[Point], threads: int) -> dict[str, Any]:
+    """Runs both serial and parallel implementations and returns timing results."""
+    st: float = time()
+    run_serial(points)
+    st: float = time() - st
 
-    start: float = time()
-    par_res: list[Point] = run_parallel(points, threads)
-    par_time: float = time() - start
+    st = time()
+    res: list[Point] = run_parallel(points, threads)
+    pt: float = time() - st
     
     return {
-        "hull": par_res, 
-        "serial_time": serial_time,
-        "parallel_time": par_time,
-        "speedup": serial_time / par_time if par_time > 0.0001 else 1.0 
+        "hull": res,
+        "serial_time": st,
+        "parallel_time": pt,
+        "speedup": st / pt if pt > 0.0001 else 1.0
     }
