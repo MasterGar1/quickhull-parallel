@@ -100,13 +100,13 @@ def run_parallel(points: list[Point], num_threads: int) -> list[Point]:
 
 def benchmark(points: list[Point], threads: int) -> dict[str, Any]:
     """Runs both serial and parallel implementations and returns timing results."""
-    st: float = time()
+    beg: float = time()
     run_serial(points)
-    st: float = time() - st
+    st: float = time() - beg
 
-    st = time()
+    beg = time()
     res: list[Point] = run_parallel(points, threads)
-    pt: float = time() - st
+    pt: float = time() - beg
     
     return {
         "hull": res,
