@@ -28,7 +28,7 @@ This project implements the QuickHull algorithm to find the Convex Hull of a set
     ```
 
 3.  **Interaction**:
-    - Enter the number of points (recommend > 1,000,000 to see parallel benefits).
+    - Enter the number of points (recommend  1,000,000 to see parallel benefits).
     - Enter the number of worker threads.
     - Enter the amount of dimensions the points should have.
     - View the timing results in the console.

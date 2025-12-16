@@ -6,13 +6,14 @@ from random import uniform
 HOST: str = "127.0.0.1"
 PORT: int = 65432
 CHUNK_SIZE: int = 40_960
-DEFAULT_POINTS: int = 100_000
+DEFAULT_POINTS: int = 1_000_000
 DEFAULT_THREADS: int = 4
 DEFAULT_DIMS: int = 2
 DEFAULT_MARGINS: tuple[int, int] = 0, 10_000
 
 class Point:
     """Represents a point in N-dimensional space."""
+    __slots__ = ('coords',) # reduces memory by not making Python creata a dynamic dictionary for every object
     def __init__(self, *args: list[float]):
         """Initializes a Point with N coordinates."""
         self.coords: tuple = tuple(args)

@@ -1,6 +1,5 @@
 """
-Implements a client that generates random points, sends them to
-the server for processing, and displays the benchmark results.
+Implements a client that generates random points, sends them to the server for processing, and displays the benchmark results.
 """
 from socket  import socket, SOCK_STREAM, AF_INET
 from pickle  import dumps, loads
@@ -21,7 +20,7 @@ def run_client() -> None:
             inpt: str = input(f"[Input] Enter number of points (default {DEFAULT_POINTS}): ")
             pts: int = int(inpt) if inpt else DEFAULT_POINTS
             
-            inpt = input(f"[Input] Enter number of threads (default {DEFAULT_THREADS}): ")
+            inpt = input(f"[Input] Enter number of threads / processes (default {DEFAULT_THREADS}): ")
             thr: int = int(inpt) if inpt else DEFAULT_THREADS
             
             inpt = input(f"[Input] Enter dimensions (default {DEFAULT_DIMS}): ")
@@ -59,11 +58,12 @@ def run_client() -> None:
         hull: list[Point] = result['hull']
 
         print("\n[RESULTS]")
-        print(f"Input Size:             {pts} points")
-        print(f"Server Serial Time:     {result['serial_time']:.4f} s")
-        print(f"Server Parallel Time:   {result['parallel_time']:.4f} s ({thr} threads)")
-        print(f"Speedup:                {result['speedup']:.2f}x")
-        print(f"Hull Points Amount:     {len(hull)}")
+        print(f"Input Size:                    {pts} points")
+        print(f"Serial Time:                   {result['serial_time']:.4f} s")
+        print(f"Parallel Time (Multithreaded): {result['threaded_time']:.4f} s ({thr} threads)")
+        print(f"Parallel Time (Multiprocess):  {result['processes_time']:.4f} s ({thr} processes)")
+        print(f"Speedup:                       {result['speedup'][0]:.2f}x : {result['speedup'][1]:.2f}x")
+        print(f"Hull Points Amount:            {len(hull)}")
         print(f"Hull Points:{"   ".join([ f"{"\n" if i % 4 == 0 else ""}{p}" for i, p in enumerate(hull) ])}")
     except ConnectionRefusedError:
         print(f"\n[Error] Could not connect to {HOST}:{PORT}. Is the server running?")
