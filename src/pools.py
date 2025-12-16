@@ -4,7 +4,7 @@ ThreadPool and ProcessPool classes that manage pools of workers and a Future cla
 from multiprocessing import Process, cpu_count, Queue as MPQueue
 from threading       import Thread, Event
 from queue           import Queue
-from typing          import Any
+from typing          import Any, Callable
 
 class Future:
     """Represents a future result of an asynchronous computation."""
@@ -65,7 +65,7 @@ class ThreadPool:
                 else:
                     future.set_exception(data)
 
-    def submit(self, func, *args, **kwargs) -> Future:
+    def submit(self, func: Callable, *args: Any, **kwargs: Any) -> Future:
         """Submits a function to be executed by the thread pool."""
         if self._is_shut: raise RuntimeError("[Error] ThreadPool is shut down")
         
@@ -128,7 +128,7 @@ class ProcessPool:
                 else:
                     future.set_exception(data)
 
-    def submit(self, func, *args, **kwargs) -> Future:
+    def submit(self, func: Callable, *args: Any, **kwargs: Any) -> Future:
         """Submits a function to be executed by the process pool."""
         if self._is_shut: raise RuntimeError("[Error] ProcessPool is shut down")
         
@@ -150,7 +150,7 @@ class ProcessPool:
 def _thread_worker(task_queue: Queue, res_queue: Queue) -> None:
     """Worker function that retrieves tasks from the queue and executes them."""
     while True:
-        task: tuple[int, callable, list, dict] = task_queue.get()
+        task: tuple[int, Callable, list, dict] | None = task_queue.get()
         if task is None:
             task_queue.task_done()
             break
@@ -167,7 +167,7 @@ def _thread_worker(task_queue: Queue, res_queue: Queue) -> None:
 def _process_worker(task_queue: MPQueue, res_queue: MPQueue) -> None:
     """Worker function that retrieves tasks from the queue and executes them."""
     while True:
-        task = task_queue.get()
+        task: tuple[int, Callable, list, dict] | None = task_queue.get()
         if task is None:
             break
 

@@ -1,6 +1,7 @@
 """
 Implements a client that generates random points, sends them to the server for processing, and displays the benchmark results.
 """
+import numpy as np
 from socket  import socket, SOCK_STREAM, AF_INET
 from pickle  import dumps, loads
 from struct  import pack, unpack
@@ -8,7 +9,7 @@ from zlib    import compress, decompress
 from time    import time
 from typing  import Any
 
-from utility import generate_points, Point, HOST, PORT, CHUNK_SIZE, DEFAULT_POINTS, DEFAULT_THREADS, DEFAULT_DIMS
+from utility import generate_points, NPoint, CArray, HOST, PORT, CHUNK_SIZE, DEFAULT_POINTS, DEFAULT_THREADS, DEFAULT_DIMS
 
 def run_client() -> None:
     """Connects to the server, sends input data, and displays the results."""
@@ -26,7 +27,7 @@ def run_client() -> None:
             inpt = input(f"[Input] Enter dimensions (default {DEFAULT_DIMS}): ")
             dims: int = int(inpt) if inpt else DEFAULT_DIMS
 
-            points: list[Point] = generate_points(pts, dims)
+            points: CArray[NPoint] = generate_points(pts, dims)
             
             payload: dict[str, Any]= {"points": points, "threads": thr}
             print("[Client] Compressing and sending data...")
@@ -55,7 +56,7 @@ def run_client() -> None:
             print(f"[Done] Data received. Total time: {tt:.2f}s")
         
         result: dict[str, Any] = loads(decompress(resp))
-        hull: list[Point] = result['hull']
+        hull: list[np.ndarray] = result['hull']
 
         print("\n[RESULTS]")
         print(f"Input Size:                    {pts} points")

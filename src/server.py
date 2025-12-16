@@ -27,7 +27,7 @@ def recv_exact(sock: socket, size: int) -> bytes:
     """Receives exactly `size` bytes from the socket connection."""
     buf: bytes = b''
     while len(buf) < size:
-        pack: bytes = sock.recv(min(size - len(buf), CHUNK_SIZE))
+        pack: bytes | None = sock.recv(min(size - len(buf), CHUNK_SIZE))
         if not pack:
             return None
         buf += pack
@@ -48,7 +48,7 @@ def handle_client(sock: socket, addr: tuple[str, int]) -> None:
 
         req: dict[str, Any]= loads(decompress(comp_data))
         
-        points: list[object] = req.get('points', [])
+        points: Any = req.get('points', [])
         thr: int = req.get('threads', DEFAULT_THREADS)
         print(f"[Process] Processing {len(points)} points with {thr} threads / processes.")
         
@@ -63,7 +63,7 @@ def handle_client(sock: socket, addr: tuple[str, int]) -> None:
         print(f"[Server] Closing connection to {addr[0]}:{addr[1]}.")
         sock.close()
 
-def run_server():
+def run_server() -> None:
     """Starts the server to listen for incoming connections."""
     check_gil_status()
     pool: ThreadPool = ThreadPool(4)

@@ -1,168 +1,154 @@
 """
 QuickHull algorithm implementation for Convex Hull construction.
 """
+import numpy as np
 from time    import time
 from typing  import Any
 
 from pools   import ThreadPool, ProcessPool, Future
-from utility import Point
+from utility import CArray, NPoint
 
-type Task = tuple[list[Point], Point, Point, int] # Points within, Start point, End line, Side 
-type Partition = tuple[Point, Task, Task] # Best point, Side 1, Side 2
+type Task = tuple[CArray[NPoint], NPoint, NPoint, int] # Points within, Start point, End point, Side 
+type Partition = tuple[NPoint, Task, Task] # Best point, Side 1, Side 2
 
-def quickhull_step(points: list[Point], p1: Point, p2: Point, side: int) -> list[Point]:
-    """Recursively computes the convex hull for points on one side of the line p1-p2."""
-    res: Partition | None = partition(points, p1, p2, side)
-    if res is None:
-        return []
-    
-    p_max, task1, task2 = res
-    return quickhull_step(*task1) + [p_max] + quickhull_step(*task2)
-
-def partition(points: list[Point], p1: Point, p2: Point, side: int) -> Partition | None:
+def _partition(points: NPoint, p1: NPoint, p2: NPoint, side: int) -> Partition | None:
     """Partitions points for a single QuickHull step, returning the max point and sub-tasks."""
-    x1, y1 = p1.coords
-    x2, y2 = p2.coords
-    dx, dy = x2 - x1, y2 - y1
+    v1x, v1y = p2[0] - p1[0], p2[1] - p1[1]
+    
+    cross: NPoint = (points[:, 1] - p1[1]) * v1x - v1y * (points[:, 0] - p1[0])
+    
+    if side == 1:
+        mask: CArray[bool] = cross > 0
+        if not np.any(mask): return None
+        valid_points: NPoint = points[mask]
+        p_max: NPoint = valid_points[np.argmax(cross[mask])]
+    else:
+        mask: CArray[bool] = cross < 0
+        if not np.any(mask): return None
+        valid_points: NPoint = points[mask]
+        p_max: NPoint = valid_points[np.argmin(cross[mask])]
 
-    max_dist: float = 0.0
-    p_max: Point = None
-
-    for p in points:
-        px, py = p.coords
-        cross: float = (py - y1) * dx - dy * (px - x1)
+    dx1, dy1 = p_max[0] - p1[0], p_max[1] - p1[1]
+    c1: NPoint = (valid_points[:, 1] - p1[1]) * dx1 - dy1 * (valid_points[:, 0] - p1[0])
+    
+    dx2, dy2 = p2[0] - p_max[0], p2[1] - p_max[1]
+    c2: NPoint = (valid_points[:, 1] - p_max[1]) * dx2 - dy2 * (valid_points[:, 0] - p_max[0])
+    
+    if side == 1:
+        s1: NPoint = valid_points[c1 > 0]
+        s2: NPoint = valid_points[c2 > 0]
+    else:
+        s1: NPoint = valid_points[c1 < 0]
+        s2: NPoint = valid_points[c2 < 0]
         
-        if side == 1:
-            if cross > max_dist:
-                max_dist = cross
-                p_max = p
-        else:
-            if cross < -max_dist:
-                max_dist = -cross
-                p_max = p
-    
-    if not p_max: return None
-    
-    s1: list[Point] = []
-    s2: list[Point] = []
-    
-    mx, my = p_max.coords
-    dx1, dy1 = mx - x1, my - y1
-    dx2, dy2 = x2 - mx, y2 - my
-    
-    for p in points:
-        if p is p_max: continue
-        px, py = p.coords
-        
-        cp1 = (py - y1) * dx1 - dy1 * (px - x1)
-        if (side == 1 and cp1 > 0) or (side == -1 and cp1 < 0):
-            s1.append(p)
-            continue
-            
-        cp2 = (py - my) * dx2 - dy2 * (px - mx)
-        if (side == 1 and cp2 > 0) or (side == -1 and cp2 < 0):
-            s2.append(p)
-    
-    return (p_max, (s1, p1, p_max, side), (s2, p_max, p2, side))
+    return p_max, (s1, p1, p_max, side), (s2, p_max, p2, side)
 
-def run_serial(points: list[Point]) -> list[Point]:
+def _quickhull_step(points: NPoint, p1: NPoint, p2: NPoint, side: int) -> list[NPoint]:
+    """Recursively computes the convex hull for points on one side of the line p1-p2."""
+    part: Partition | None = _partition(points, p1, p2, side)
+    if part is None: return []
+    
+    p_max, t1, t2 = part
+
+    return _quickhull_step(*t1) + [p_max] + _quickhull_step(*t2)
+
+def run_serial(points: CArray[NPoint]) -> list[NPoint]:
     """Runs the QuickHull algorithm sequentially."""
-    if len(points) < 3: return points
+    if len(points) < 3: return list(points)
+    
+    min_x: NPoint = points[np.argmin(points[:, 0])]
+    max_x: NPoint = points[np.argmax(points[:, 0])]
 
-    min_x: Point = min(points, key=lambda p: p[0])
-    max_x: Point = max(points, key=lambda p: p[0])
+    hull: list[NPoint] = [min_x, max_x] + _quickhull_step(points, min_x, max_x, 1) + _quickhull_step(points, min_x, max_x, -1)
 
-    hull: list[Point] = [min_x, max_x]
-    hull += quickhull_step(points, min_x, max_x, 1)
-    hull += quickhull_step(points, min_x, max_x, -1)
+    hull_np: NPoint = np.array(hull)
+    return list(np.unique(hull_np, axis=0))
 
-    return list(set(hull))
-
-def run_parallel_thread(points: list[Point], num_threads: int) -> list[Point]:
+def run_parallel_thread(points: CArray[NPoint], num_threads: int) -> list[NPoint]:
     """Runs the QuickHull algorithm in parallel using a ThreadPool."""
-    if len(points) < 3: return points
-    
-    min_x: Point = min(points, key=lambda p: p[0])
-    max_x: Point = max(points, key=lambda p: p[0])
+    if len(points) < 3: return list(points)
 
-    hull: list[Point] = [min_x, max_x]
+    min_x: NPoint = points[np.argmin(points[:, 0])]
+    max_x: NPoint = points[np.argmax(points[:, 0])]
     
-    cur_tasks: list[Task]= [(points, min_x, max_x, 1), (points, min_x, max_x, -1)]
+    hull: list[NPoint] = [min_x, max_x]
+    cur_tasks: list[Task] = [(points, min_x, max_x, 1), (points, min_x, max_x, -1)]
     
     tar: int = num_threads * 4
-
-    while len(cur_tasks) < tar and cur_tasks:
-        next_tasks: list[Task] = []
-
-        for args in cur_tasks:
-            res: Partition | None = partition(*args)
-            if not res: continue
-            p_max, t1, t2 = res
-            hull.append(p_max)
-            if t1[0]: next_tasks.append(t1)
-            if t2[0]: next_tasks.append(t2)
-        cur_tasks = next_tasks
-
     pool: ThreadPool = ThreadPool(num_threads)
 
-    futures: list[Future] = [pool.submit(quickhull_step, *args) for args in cur_tasks]
-    
-    for f in futures:
-        hull += f.get_result()
-            
-    pool.shutdown()
-    return list(set(hull))
-
-def run_parallel_process(points: list[Point], num_procs: int) -> list[Point]:
-    """Runs the QuickHull algorithm in parallel using a ProcessPool."""
-    if len(points) < 3: return points
-    
-    min_x: Point = min(points, key=lambda p: p[0])
-    max_x: Point = max(points, key=lambda p: p[0])
-
-    hull: list[Point] = [min_x, max_x]
-    
-    cur_tasks: list[Task]= [(points, min_x, max_x, 1), (points, min_x, max_x, -1)]
-    
-    tar: int = num_procs * 4
-
     while len(cur_tasks) < tar and cur_tasks:
+        futures: list[Future] = [pool.submit(_partition, *args) for args in cur_tasks]
         next_tasks: list[Task] = []
 
-        for args in cur_tasks:
-            res: Partition | None = partition(*args)
+        for f in futures:
+            res: Partition | None = f.get_result()
             if not res: continue
             p_max, t1, t2 = res
             hull.append(p_max)
-            if t1[0]: next_tasks.append(t1)
-            if t2[0]: next_tasks.append(t2)
+            if t1[0].size > 0: next_tasks.append(t1)
+            if t2[0].size > 0: next_tasks.append(t2)
         cur_tasks = next_tasks
 
-    pool: ProcessPool = ProcessPool(num_procs)
-
-    futures: list[Future] = [pool.submit(quickhull_step, *args) for args in cur_tasks]
+    futures: list[Future] = [pool.submit(_quickhull_step, *args) for args in cur_tasks]
     
     for f in futures:
         hull += f.get_result()
             
     pool.shutdown()
-    return list(set(hull))
+    hull_np: CArray[NPoint] = np.array(hull)
+    return list(np.unique(hull_np, axis=0))
 
-def benchmark(points: list[Point], threads: int) -> dict[str, Any]:
+def run_parallel_process(points: CArray[NPoint], num_procs: int) -> list[NPoint]:
+    """Runs the QuickHull algorithm in parallel using a ProcessPool."""
+    if len(points) < 3: return list(points)
+
+    min_x: NPoint = points[np.argmin(points[:, 0])]
+    max_x: NPoint = points[np.argmax(points[:, 0])]
+    
+    hull: list[NPoint] = [min_x, max_x]
+    cur_tasks: list[Task] = [(points, min_x, max_x, 1), (points, min_x, max_x, -1)]
+    
+    tar: int = num_procs * 4
+    pool: ProcessPool = ProcessPool(num_procs)
+
+    while len(cur_tasks) < tar and cur_tasks:
+        futures: list[Future] = [pool.submit(_partition, *args) for args in cur_tasks]
+        next_tasks: list[Task] = []
+
+        for f in futures:
+            res: Partition | None = f.get_result()
+            if not res: continue
+            p_max, t1, t2 = res
+            hull.append(p_max)
+            if t1[0].size > 0: next_tasks.append(t1)
+            if t2[0].size > 0: next_tasks.append(t2)
+        cur_tasks = next_tasks
+
+    futures: list[Future] = [pool.submit(_quickhull_step, *args) for args in cur_tasks]
+    
+    for f in futures:
+        hull += f.get_result()
+            
+    pool.shutdown()
+    hull_np: CArray[NPoint] = np.array(hull)
+    return list(np.unique(hull_np, axis=0))
+
+def benchmark(points: CArray[NPoint], threads: int) -> dict[str, Any]:
     """Runs both serial and parallel implementations and returns timing results."""
     beg: float = time()
-    res1: list[Point] = run_serial(points)
+    res1: list[NPoint] = run_serial(points)
     st: float = time() - beg
 
     beg = time()
-    res2: list[Point] = run_parallel_thread(points, threads)
+    res2: list[NPoint] = run_parallel_thread(points, threads)
     tt: float = time() - beg
 
     beg = time()
-    res3: list[Point] = run_parallel_process(points, threads)
+    res3: list[NPoint] = run_parallel_process(points, threads)
     pt: float = time() - beg
     
-    if frozenset(res1) != frozenset(res2) or frozenset(res1) != frozenset(res3):
+    if not np.array_equal(res1, res2) or not np.array_equal(res1, res3):
         raise RuntimeError("[Error] Results aren't equal")
 
     return {
