@@ -19,7 +19,8 @@ This project implements the QuickHull algorithm to find the Convex Hull of a set
     # Windows
     .\venv\Scripts\activate
     # Linux
-    source venv/bin/activate 
+    source venv/bin/activate
+    
     pip install -r requirements.txt
    ```
 
