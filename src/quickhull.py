@@ -1,12 +1,12 @@
 """
 QuickHull algorithm implementation for Convex Hull construction.
 """
-import numpy as np
-from time    import time
-from typing  import Any
+import numpy   as     np
+from   time    import time
+from   typing  import Any
 
-from pools   import ThreadPool, ProcessPool, Future
-from utility import CArray, NPoint
+from   pools   import ThreadPool, ProcessPool, Future
+from   utility import CArray, NPoint
 
 type Task = tuple[CArray[NPoint], NPoint, NPoint, int] # Points within, Start point, End point, Side
 type Partition = tuple[NPoint, Task, Task] # Best point, Side 1, Side 2

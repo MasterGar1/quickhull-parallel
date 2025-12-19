@@ -1,10 +1,13 @@
 """
 ThreadPool and ProcessPool classes that manage pools of workers and a Future class for handling asynchronous results.
 """
-from multiprocessing import Process, cpu_count, Queue as MPQueue
+from multiprocessing import Process, Queue as MPQueue
 from threading       import Thread, Event
 from queue           import Queue
 from typing          import Any, Callable
+
+type Task = tuple[int, Callable, list, dict]
+type Result = tuple[int, bool, Any]
 
 class Future:
     """Represents a future result of an asynchronous computation."""
@@ -36,8 +39,8 @@ class ThreadPool:
     def __init__(self, num_threads: int):
         """Initializes the ThreadPool with a specified number of worker threads."""
         self.num_threads: int = num_threads
-        self.tasks: Queue = Queue()
-        self.res_queue: Queue = Queue()
+        self.tasks: Queue[Task] = Queue()
+        self.res_queue: Queue[Result] = Queue()
         self.threads: list[Thread] = []
         self.futures: dict[int, Future] = {}
         self.res_hand: Thread = Thread(target=self._handle_results, daemon=True)
@@ -80,23 +83,16 @@ class ThreadPool:
     def shutdown(self) -> None:
         """Shuts down the thread pool and waits for all threads to finish."""
         self._is_shut = True
-
         for _ in self.threads: self.tasks.put(None)
         for t in self.threads: t.join()
 
 class ProcessPool:
     """Represents a process pool for executing asynchronous tasks."""
-    def __init__(self, num_processes: int = None):
+    def __init__(self, num_processes: int):
         """Initializes the ProcessPool with a specified number of worker processes."""
-        if num_processes is None:
-            try:
-                num_processes = cpu_count()
-            except NotImplementedError:
-                num_processes = 4
-
         self.num_processes: int = num_processes
-        self.tasks: MPQueue = MPQueue()
-        self.res_queue: MPQueue = MPQueue()
+        self.tasks: MPQueue[Task] = MPQueue()
+        self.res_queue: MPQueue[Result] = MPQueue()
         self.processes: list[Process] = []
         self.futures: dict[int, Future] = {}
         self.res_hand: Thread = Thread(target=self._handle_results, daemon=True)
@@ -147,10 +143,10 @@ class ProcessPool:
         for _ in self.processes: self.tasks.put(None)
         for p in self.processes: p.join()
 
-def _thread_worker(task_queue: Queue, res_queue: Queue) -> None:
+def _thread_worker(task_queue: Queue[Task], res_queue: Queue[Result]) -> None:
     """Worker function that retrieves tasks from the queue and executes them."""
     while True:
-        task: tuple[int, Callable, list, dict] | None = task_queue.get()
+        task: Task | None = task_queue.get()
         if task is None:
             task_queue.task_done()
             break
@@ -164,10 +160,10 @@ def _thread_worker(task_queue: Queue, res_queue: Queue) -> None:
         finally:
             task_queue.task_done()
 
-def _process_worker(task_queue: MPQueue, res_queue: MPQueue) -> None:
+def _process_worker(task_queue: MPQueue[Task], res_queue: MPQueue[Result]) -> None:
     """Worker function that retrieves tasks from the queue and executes them."""
     while True:
-        task: tuple[int, Callable, list, dict] | None = task_queue.get()
+        task: Task | None = task_queue.get()
         if task is None:
             break
 

@@ -1,14 +1,14 @@
 """
 Implements a multi-threaded server that listens for client connections, receives point data, and computes the convex hull using parallel processing.
 """
-from socket    import socket, AF_INET, SOCK_STREAM, SO_REUSEADDR, SOL_SOCKET, timeout
+from socket    import socket, timeout, AF_INET, SOCK_STREAM, SO_REUSEADDR, SOL_SOCKET
 from pickle    import dumps, loads
 from struct    import pack, unpack
 from zlib      import compress, decompress
 from typing    import Any
 
 from quickhull import benchmark
-from utility   import HOST, PORT, CHUNK_SIZE, DEFAULT_THREADS
+from utility   import recv_exact, HOST, PORT, DEFAULT_THREADS
 from pools     import ThreadPool
 
 def check_gil_status() -> None:
@@ -23,22 +23,13 @@ def check_gil_status() -> None:
 
     print(f"[Info] GIL Status: {st}")
 
-def recv_exact(sock: socket, size: int) -> bytes:
-    """Receives exactly `size` bytes from the socket connection."""
-    buf: bytes = b''
-    while len(buf) < size:
-        pack: bytes | None = sock.recv(min(size - len(buf), CHUNK_SIZE))
-        if not pack:
-            return None
-        buf += pack
-    return buf
-
 def handle_client(sock: socket, addr: tuple[str, int]) -> None:
     """Handles a single client connection, processing the request and sending the response."""
     print(f"[Server] Accepted connection from {addr[0]}:{addr[1]}.")
     try:
         data_len: bytes = recv_exact(sock, 4)
         if not data_len:
+            print("[Error] Incomplete data received.")
             return
         msg_len: int = unpack('>I', data_len)[0]
         

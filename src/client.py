@@ -1,15 +1,15 @@
 """
 Implements a client that generates random points, sends them to the server for processing, and displays the benchmark results.
 """
-import numpy as np
-from socket  import socket, SOCK_STREAM, AF_INET
-from pickle  import dumps, loads
-from struct  import pack, unpack
-from zlib    import compress, decompress
-from time    import time
-from typing  import Any
+import numpy   as     np
+from   socket  import socket, SOCK_STREAM, AF_INET
+from   pickle  import dumps, loads
+from   struct  import pack, unpack
+from   zlib    import compress, decompress
+from   time    import time
+from   typing  import Any
 
-from utility import generate_points, NPoint, CArray, HOST, PORT, CHUNK_SIZE, DEFAULT_POINTS, DEFAULT_THREADS, DEFAULT_DIMS
+from utility import *
 
 def run_client() -> None:
     """Connects to the server, sends input data, and displays the results."""
@@ -36,21 +36,16 @@ def run_client() -> None:
             data: bytes = compress(dumps(payload))
             sock.sendall(pack('>I', len(data)) + data)
             
-            data_len: bytes = sock.recv(4)
+            data_len: bytes = recv_exact(sock, 4)
             if not data_len:
                 print("[Error] No response length received.")
                 return
             resp_len: int = unpack('>I', data_len)[0]
             
-            fragments: list[bytes] = []
-            rec_bytes: int = 0
-            while rec_bytes < resp_len:
-                chunk: bytes = sock.recv(min(resp_len - rec_bytes, CHUNK_SIZE))
-                if not chunk: break
-                fragments.append(chunk)
-                rec_bytes += len(chunk)
-            
-            resp: bytes = b''.join(fragments)
+            resp: bytes | None = recv_exact(sock, resp_len)
+            if not resp:
+                print("[Error] Incomplete data received.")
+                return
             
             tt: float = time() - st
             print(f"[Done] Data received. Total time: {tt:.2f}s")
